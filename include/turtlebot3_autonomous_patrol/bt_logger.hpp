@@ -4,9 +4,14 @@
 
 #pragma once
 
+#include <ctime>
+#include <iomanip>
+#include <map>
+#include <sstream>
+#include <string>
+
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
-#include <string>
 
 class BTLogger
 {
@@ -18,7 +23,6 @@ public:
     if (!publisher_)
     {
       publisher_ = node->create_publisher<std_msgs::msg::String>("/bt_log", 10);
-      clock_ = node->get_clock();
     }
   }
 
@@ -31,19 +35,30 @@ public:
     if (last_msgs_[key] != msg)
     {
       auto out = std_msgs::msg::String();
-      out.data = msg;
+      out.data = local_timestamp() + " " + msg;
       publisher_->publish(out);
       last_msgs_[key] = msg;
     }
-}
+  }
 
 private:
+  static std::string local_timestamp()
+  {
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+    localtime_r(&now, &local);
+
+    const int hour = local.tm_hour % 12;
+    std::ostringstream stamp;
+    stamp << std::put_time(&local, "%Y-%m-%d ") << (hour == 0 ? 12 : hour)
+          << std::put_time(&local, ":%M:%S %p %Z");
+    return stamp.str();
+  }
+
   static rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
-  static rclcpp::Clock::SharedPtr clock_;
   static std::map<std::string, std::string> last_msgs_;
 };
 
 // header-only static member definitions — inline avoids multiple-definition errors
 inline rclcpp::Publisher<std_msgs::msg::String>::SharedPtr BTLogger::publisher_ = nullptr;
-inline rclcpp::Clock::SharedPtr BTLogger::clock_ = nullptr;
 inline std::map<std::string, std::string> BTLogger::last_msgs_;
