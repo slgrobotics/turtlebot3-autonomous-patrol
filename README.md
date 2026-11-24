@@ -1,3 +1,11 @@
+> **Note:**
+> - This is a fork of the original package; please refer to the [original repository](https://github.com/OmarAds2002/turtlebot3-autonomous-patrol).
+> - All credit and copyright belong to the original [author](https://github.com/OmarAds2002).
+> - Details on my experiments with this package are available in the [Patrol README](https://github.com/slgrobotics/articubot_one/blob/lyrical/README_patrol.md).
+> - Visit my [main project wiki](https://github.com/slgrobotics/articubot_one/wiki) for more information.
+
+-------
+
 # TurtleBot3 Autonomous Patrol
 
 A patrol robot in Gazebo Harmonic with ROS2 Jazzy, driven by a behavior tree. It walks a
