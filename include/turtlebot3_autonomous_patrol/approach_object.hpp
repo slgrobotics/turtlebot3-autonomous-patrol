@@ -77,6 +77,8 @@ public:
       {
         BTLogger::log("ApproachObject: FAILURE — goal rejected");
         return BT::NodeStatus::FAILURE;
+      } else {
+        BTLogger::log("ApproachObject: goal accepted");
       }
 
       result_future_ = action_client_->async_get_result(goal_handle_);

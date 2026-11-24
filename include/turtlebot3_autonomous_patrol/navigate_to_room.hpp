@@ -7,6 +7,10 @@
 
 #pragma once
 
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+
 #include <behaviortree_cpp/action_node.h>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -64,6 +68,8 @@ public:
 
     BTLogger::log("NavigateToRoom: heading to (" +
                   std::to_string(x) + ", " + std::to_string(y) + ")");
+    running_since_ = std::chrono::steady_clock::now();
+    last_logged_minute_ = std::chrono::minutes::zero();
     return BT::NodeStatus::RUNNING;
   }
 
@@ -102,6 +108,19 @@ public:
       return BT::NodeStatus::FAILURE;
     }
 
+    const auto elapsed = std::chrono::steady_clock::now() - running_since_;
+    const auto elapsed_minutes = std::chrono::duration_cast<std::chrono::minutes>(elapsed);
+    if (elapsed_minutes > last_logged_minute_)
+    {
+      const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+      std::ostringstream message;
+      message << "Running: " << std::setfill('0')
+              << std::setw(2) << seconds / 3600 << ':'
+              << std::setw(2) << seconds / 60 % 60 << ':'
+              << std::setw(2) << seconds % 60;
+      BTLogger::log(message.str(), false);
+      last_logged_minute_ = elapsed_minutes;
+    }
     return BT::NodeStatus::RUNNING;
   }
 
@@ -116,6 +135,8 @@ public:
   }
 
 private:
+  std::chrono::steady_clock::time_point running_since_;
+  std::chrono::minutes last_logged_minute_{0};
   rclcpp::Node::SharedPtr node_;
   rclcpp_action::Client<NavigateToPose>::SharedPtr action_client_;
   std::shared_future<GoalHandle::SharedPtr> goal_future_;

@@ -26,13 +26,13 @@ public:
     }
   }
 
-  static void log(const std::string& msg)
+  static void log(const std::string& msg, bool suppress_duplicates = true)
   {
     if (!publisher_) return;
 
     auto key = msg.substr(0, msg.find(':'));
 
-    if (last_msgs_[key] != msg)
+    if (!suppress_duplicates || last_msgs_[key] != msg)
     {
       auto out = std_msgs::msg::String();
       out.data = local_timestamp() + " " + msg;
