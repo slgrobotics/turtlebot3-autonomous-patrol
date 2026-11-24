@@ -1,12 +1,14 @@
+Back to [Main Project Home](https://github.com/slgrobotics/articubot_one/wiki)
+
+-----------------------
+
+# TurtleBot3 Autonomous Patrol
+
 > **Note:**
 > - This is a fork of the original package; please refer to the [original repository](https://github.com/OmarAds2002/turtlebot3-autonomous-patrol).
 > - All credit and copyright belong to the original [author](https://github.com/OmarAds2002).
 > - Details on my experiments with this package are available in the [Patrol README](https://github.com/slgrobotics/articubot_one/blob/lyrical/README_patrol.md).
 > - Visit my [main project wiki](https://github.com/slgrobotics/articubot_one/wiki) for more information.
-
--------
-
-# TurtleBot3 Autonomous Patrol
 
 A patrol robot in Gazebo Harmonic with ROS2 Jazzy, driven by a behavior tree. It walks a
 loop through a four-room building, watches for objects, keeps an eye on its battery, and
@@ -14,6 +16,30 @@ recovers when navigation fails. All of it is run by a custom mission-level behav
 in its own process.
 
 ![Demo](docs/demo.gif)
+
+**Contents:**
+
+- [What is this package for?](#what-is-this-package-for)
+- [How it's put together](#how-its-put-together)
+- [The behavior tree](#the-behavior-tree)
+- [The custom nodes](#the-custom-nodes)
+- [Three patterns worth stealing](#three-patterns-worth-stealing)
+- [Quickstart](#quickstart)
+- [Coordinates](#coordinates)
+- [Project structure](#project-structure)
+- [What went wrong, and what I learned](#what-went-wrong-and-what-i-learned)
+  - [The bug: my behavior tree was never running](#the-bug-my-behavior-tree-was-never-running)
+  - [Other things that cost me time](#other-things-that-cost-me-time)
+- [Built with](#built-with)
+- [Known limitations](#known-limitations)
+
+-------------
+
+## What is this package for?
+
+A robot that checks the same places over and over needs a way to remember its route and decide what to do if something changes.
+This package lets a robot visit a list of stops on its own, watching its battery - and dock for recharging as needed.
+For example, it can make a loop through four rooms, pause to inspect a reported object, and retry if it cannot reach a stop.
 
 ## How it's put together
 
@@ -273,3 +299,7 @@ ROS2 Jazzy · Gazebo Harmonic (Fortress API) · Nav2 · BT.CPP v4 · slam_toolbo
   update them in `patrol_bt.xml`.
 - **No quantitative evaluation.** There's no success rate over N patrol loops, no numbers on
   how often recovery fires or works. It's demonstrated, not measured.
+
+-----------------------
+
+Back to [Main Project Home](https://github.com/slgrobotics/articubot_one/wiki)
