@@ -131,7 +131,7 @@ sends the parent `Fallback` back around to try navigation again.
 
 | Node | Base class | What it does |
 |---|---|---|
-| `CheckBattery` | ConditionNode | Reads `sensor_msgs/msg/BatteryState` on `/battery/battery_state` and succeeds when `percentage` is at or above `low_battery_threshold` (default 0.20). |
+| `CheckBattery` | ConditionNode | Reads `sensor_msgs/msg/BatteryState` on `/battery/battery_state` and holds patrol after a reading below `low_battery_threshold` (default 0.20) until `full_battery_threshold` (default 1.0) or `FULL` status. |
 | `DetectObject` | ConditionNode | Reads `/detections`, writes the pose to the blackboard |
 | `NavigateToRoom` | StatefulActionNode | Two-phase async action client → Nav2 `/navigate_to_pose` |
 | `ApproachObject` | StatefulActionNode | Same pattern, reads a PoseStamped port, stops 0.5 m short |
@@ -303,7 +303,7 @@ ROS2 Lyrical · Gazebo Jetty · Nav2 · BT.CPP v4 · slam_toolbox · C++17
   inspection pose. There's no perception pipeline behind it — the RGBD camera is on the
   robot and publishing, but nothing consumes it. Swapping in a real detector is the obvious
   next step.
-- **Battery is a mock topic**, published by hand.
+- **The standalone demo uses a mock battery publisher.** Seggy provides its normalized battery state on the same topic.
 - **Room coordinates are hardcoded to the saved map.** Re-map the world and you have to
   update them in `patrol_bt.xml`.
 - **No quantitative evaluation.** There's no success rate over N patrol loops, no numbers on

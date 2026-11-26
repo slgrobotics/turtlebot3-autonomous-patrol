@@ -2,9 +2,9 @@
 
 #pragma once
 
-#include <atomic>
 #include <cmath>
-#include <limits>
+#include <cstdint>
+#include <mutex>
 #include <stdexcept>
 
 #include <behaviortree_cpp/condition_node.h>
@@ -14,6 +14,8 @@
 
 class CheckBattery : public BT::ConditionNode
 {
+  using BatteryState = sensor_msgs::msg::BatteryState;
+
 public:
   CheckBattery(const std::string& name, const BT::NodeConfiguration& config)
     : BT::ConditionNode(name, config)
@@ -22,49 +24,92 @@ public:
     auto node = config.blackboard->get<rclcpp::Node::SharedPtr>("node");
     BTLogger::init(node);
 
-    constexpr auto parameter = "low_battery_threshold";
-    const double threshold = node->has_parameter(parameter)
-      ? node->get_parameter(parameter).as_double()
-      : node->declare_parameter<double>(parameter, 0.20);
-    if (!std::isfinite(threshold) || threshold < 0.0 || threshold > 1.0)
+    const auto threshold = [&node](const char* parameter, double default_value) {
+      return node->has_parameter(parameter)
+        ? node->get_parameter(parameter).as_double()
+        : node->declare_parameter<double>(parameter, default_value);
+    };
+    const double low = threshold("low_battery_threshold", 0.20);
+    const double full = threshold("full_battery_threshold", 1.0);
+    if (!std::isfinite(low) || !std::isfinite(full) ||
+        low < 0.0 || full > 1.0 || static_cast<float>(low) >= static_cast<float>(full))
     {
-      throw std::invalid_argument("low_battery_threshold must be a fraction between 0.0 and 1.0");
+      throw std::invalid_argument(
+        "Battery thresholds must satisfy 0 <= low_battery_threshold < full_battery_threshold <= 1");
     }
-    threshold_ = static_cast<float>(threshold);
+    low_threshold_ = static_cast<float>(low);
+    full_threshold_ = static_cast<float>(full);
 
-    RCLCPP_INFO(node->get_logger(), "Low battery threshold: %f percent", threshold_ * 100.0f);
+    RCLCPP_INFO(node->get_logger(), "Battery thresholds: low %.1f%%, full %.1f%%",
+                low_threshold_ * 100.0f, full_threshold_ * 100.0f);
 
-    battery_sub_ = node->create_subscription<sensor_msgs::msg::BatteryState>(
+    battery_sub_ = node->create_subscription<BatteryState>(
       "/battery/battery_state", 10,
-      [this](const sensor_msgs::msg::BatteryState& msg) {
-        if (msg.present && std::isfinite(msg.percentage) &&
-            msg.percentage >= 0.0f && msg.percentage <= 1.0f)
+      [this](const BatteryState& msg) {
+        if (!msg.present)
         {
-          battery_level_.store(msg.percentage);
+          return;
+        }
+
+        const float level = msg.percentage;
+        const bool valid_level = std::isfinite(level) && level >= 0.0f && level <= 1.0f;
+        const bool reports_full =
+          msg.power_supply_status == BatteryState::POWER_SUPPLY_STATUS_FULL;
+        if (!valid_level && !reports_full)
+        {
+          return;
+        }
+
+        std::lock_guard<std::mutex> lock(battery_mutex_);
+        battery_level_ = level;
+        battery_status_ = msg.power_supply_status;
+        received_battery_ = true;
+        if (reports_full || level >= full_threshold_)
+        {
+          charging_required_ = false;
+        }
+        else if (level < low_threshold_)
+        {
+          charging_required_ = true;
         }
       });
   }
 
   BT::NodeStatus tick() override
   {
-    const float level = battery_level_.load();
-    if (std::isnan(level))
+    float level;
+    std::uint8_t status;
+    bool charging_required;
+    bool received_battery;
     {
-      BTLogger::log("CheckBattery: waiting for a valid battery reading");
+      std::lock_guard<std::mutex> lock(battery_mutex_);
+      level = battery_level_;
+      status = battery_status_;
+      charging_required = charging_required_;
+      received_battery = received_battery_;
+    }
+
+    if (!std::isfinite(level) || level < 0.0f || level > 1.0f)
+    {
+      BTLogger::log(!received_battery
+        ? "CheckBattery: waiting for a valid battery reading"
+        : "CheckBattery: SUCCESS (battery status: Full)");
       return BT::NodeStatus::SUCCESS;
     }
 
-    // we need to round values here because we rely on logger filtering duplicate messages
     const auto percentage = std::to_string(std::lround(level * 100.0f)) + "%";
-    const auto percentage_t = std::to_string(std::lround(threshold_ * 100.0f)) + "%";
+    const auto percentage_low = std::to_string(std::lround(low_threshold_ * 100.0f)) + "%";
 
-    if (level >= threshold_)
+    if (charging_required)
     {
-      BTLogger::log("CheckBattery: SUCCESS (battery GOOD: " + percentage + "  — threshold is " + percentage_t + ")");
-      return BT::NodeStatus::SUCCESS;
+      const auto percentage_full = std::to_string(std::lround(full_threshold_ * 100.0f)) + "%";
+      BTLogger::log("CheckBattery: FAILURE — waiting for full charge (" + percentage +
+                    ", status: " + status_label(status) + ", target " + percentage_full + " or FULL status)");
+      return BT::NodeStatus::FAILURE;
     }
-    BTLogger::log("CheckBattery: FAILURE — battery LOW: " + percentage + "  — threshold is " + percentage_t);
-    return BT::NodeStatus::FAILURE;
+    BTLogger::log("CheckBattery: SUCCESS (battery " + percentage +
+                  ", status: " + status_label(status) + "  — low threshold is " + percentage_low  + ")");
+    return BT::NodeStatus::SUCCESS;
   }
 
   static BT::PortsList providedPorts()
@@ -73,7 +118,24 @@ public:
   }
 
 private:
-  std::atomic<float> battery_level_{std::numeric_limits<float>::quiet_NaN()};
-  float threshold_;
-  rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_sub_;
+  static const char* status_label(std::uint8_t status)
+  {
+    switch (status)
+    {
+      case BatteryState::POWER_SUPPLY_STATUS_CHARGING: return "Charging";
+      case BatteryState::POWER_SUPPLY_STATUS_DISCHARGING: return "Discharging";
+      case BatteryState::POWER_SUPPLY_STATUS_NOT_CHARGING: return "Not charging";
+      case BatteryState::POWER_SUPPLY_STATUS_FULL: return "Full";
+      default: return "Unknown";
+    }
+  }
+
+  std::mutex battery_mutex_;
+  float battery_level_{-1.0f};
+  std::uint8_t battery_status_{BatteryState::POWER_SUPPLY_STATUS_UNKNOWN};
+  bool received_battery_{false};
+  bool charging_required_{false};
+  float low_threshold_;
+  float full_threshold_;
+  rclcpp::Subscription<BatteryState>::SharedPtr battery_sub_;
 };
