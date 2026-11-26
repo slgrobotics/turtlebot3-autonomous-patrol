@@ -6,6 +6,7 @@ find_package(behaviortree_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 
@@ -18,6 +19,7 @@ target_link_libraries(patrol_bt_nodes PRIVATE
   rclcpp::rclcpp
   rclcpp_action::rclcpp_action
   std_msgs::std_msgs__rosidl_typesupport_cpp
+  sensor_msgs::sensor_msgs__rosidl_typesupport_cpp
   nav2_msgs::nav2_msgs__rosidl_typesupport_cpp
   geometry_msgs::geometry_msgs__rosidl_typesupport_cpp
 )
@@ -33,6 +35,7 @@ target_link_libraries(patrol_commander PRIVATE
   rclcpp::rclcpp
   rclcpp_action::rclcpp_action
   std_msgs::std_msgs__rosidl_typesupport_cpp
+  sensor_msgs::sensor_msgs__rosidl_typesupport_cpp
   nav2_msgs::nav2_msgs__rosidl_typesupport_cpp
   geometry_msgs::geometry_msgs__rosidl_typesupport_cpp
 )

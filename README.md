@@ -67,7 +67,7 @@ mission tree calls it as a client and doesn't care how it works inside.
 ```
 patrol_commander (mission layer)
     └── ticks patrol_bt.xml
-          ├── CheckBattery    → reads /battery_state
+          ├── CheckBattery    → reads /battery/battery_state
           ├── DetectObject    → reads /detections, writes pose to blackboard
           ├── NavigateToRoom  → action client → /navigate_to_pose
           ├── ApproachObject  → action client → /navigate_to_pose (0.5m offset)
@@ -131,7 +131,7 @@ sends the parent `Fallback` back around to try navigation again.
 
 | Node | Base class | What it does |
 |---|---|---|
-| `CheckBattery` | ConditionNode | Reads `/battery_state`, SUCCESS if ≥ 20% |
+| `CheckBattery` | ConditionNode | Reads `sensor_msgs/msg/BatteryState` on `/battery/battery_state` and succeeds when `percentage` is at or above `low_battery_threshold` (default 0.20). |
 | `DetectObject` | ConditionNode | Reads `/detections`, writes the pose to the blackboard |
 | `NavigateToRoom` | StatefulActionNode | Two-phase async action client → Nav2 `/navigate_to_pose` |
 | `ApproachObject` | StatefulActionNode | Same pattern, reads a PoseStamped port, stops 0.5 m short |
@@ -189,7 +189,7 @@ ros2 launch turtlebot3_autonomous_patrol four_rooms_launch.py
 ros2 launch turtlebot3_autonomous_patrol nav_launch.py
 
 # Terminal 3: fake battery sensor
-ros2 topic pub /battery_state std_msgs/msg/Float32 "{data: 80.0}" --rate 1
+ros2 topic pub /battery/battery_state sensor_msgs/msg/BatteryState "{present: true, percentage: 0.80}" --rate 1
 
 # Terminal 4: watch the tree run
 ros2 topic echo /bt_log
@@ -206,7 +206,7 @@ ros2 topic pub /detections std_msgs/msg/String "{data: 'box'}" --once
 **Fake a low battery:**
 
 ```bash
-ros2 topic pub /battery_state std_msgs/msg/Float32 "{data: 15.0}" --rate 1
+ros2 topic pub /battery/battery_state sensor_msgs/msg/BatteryState "{present: true, percentage: 0.15}" --rate 1
 ```
 
 ## Coordinates
