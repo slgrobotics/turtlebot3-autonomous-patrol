@@ -73,7 +73,7 @@ patrol_commander (mission layer)
           ├── ApproachObject  → action client → /navigate_to_pose (0.5m offset)
           ├── RecoveryRotate  → publishes /cmd_vel directly
           ├── WaitAndRetry    → 2s pause, returns FAILURE to trigger a retry
-          └── ChargeBattery   → stub (logs and returns SUCCESS)
+          └── ChargeBattery   → docks, waits for full charge, then undocks
 
 bt_navigator (navigation layer)
     └── Nav2's built-in point-to-point tree
@@ -137,7 +137,7 @@ sends the parent `Fallback` back around to try navigation again.
 | `ApproachObject` | StatefulActionNode | Same pattern, reads a PoseStamped port, stops 0.5 m short |
 | `RecoveryRotate` | StatefulActionNode | Publishes `cmd_vel` for 6.28 s (a full turn at 1 rad/s) |
 | `WaitAndRetry` | StatefulActionNode | Waits 2 s, returns FAILURE to trigger the retry |
-| `ChargeBattery` | SyncActionNode | Stub — logs and returns SUCCESS |
+| `ChargeBattery` | StatefulActionNode | Calls `/dock_robot` with `dock_id`, waits for full charge, then calls `/undock_robot`. |
 
 All of them publish to `/bt_log`, so you can watch the tree think in real time. Useful for
 demos, and it's also how I caught the bug described below.
@@ -297,8 +297,7 @@ ROS2 Lyrical · Gazebo Jetty · Nav2 · BT.CPP v4 · slam_toolbox · C++17
 
 ## Known limitations
 
-- **`ChargeBattery` is a stub.** In reality it would navigate to a dock and wait for a full
-  charge. Right now it logs and returns SUCCESS.
+- **Automatic charging needs a docking stack.** Set the commander’s `dock_id` parameter to a configured dock. The standalone demo holds patrol on low battery if no dock is configured. The Seggy simulation profile also enables Gazebo recharge.
 - **`DetectObject` is fake.** It reacts to a string on `/detections` and writes a fixed
   inspection pose. There's no perception pipeline behind it — the RGBD camera is on the
   robot and publishing, but nothing consumes it. Swapping in a real detector is the obvious
