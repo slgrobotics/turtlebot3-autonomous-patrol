@@ -118,6 +118,7 @@ public:
         case Phase::Retry: return start_retry();
         case Phase::PreStage: return check_pre_staging();
         case Phase::Charge: return check_charge();
+        case Phase::StopRecharge: return confirm_recharge_stopped();
         case Phase::WaitForUndock: return start_undocking();
         case Phase::Undock: return check_undocking();
         case Phase::Hold: return BT::NodeStatus::RUNNING;
@@ -140,7 +141,7 @@ public:
   }
 
 private:
-  enum class Phase { WaitForDock, Dock, Retry, PreStage, Charge, WaitForUndock, Undock, Hold };
+  enum class Phase { WaitForDock, Dock, Retry, PreStage, Charge, StopRecharge, WaitForUndock, Undock, Hold };
 
   template<class T>
   static T parameter(const rclcpp::Node::SharedPtr& node, const char* name, const T& fallback)
@@ -447,10 +448,19 @@ private:
       if (battery.power_supply_status == Battery::POWER_SUPPLY_STATUS_FULL ||
           (valid && battery.percentage >= full_threshold_))
       {
-        stop_recharge();
-        phase_ = Phase::WaitForUndock;
-        deadline_ = now + std::chrono::seconds(20);
-        BTLogger::log("ChargeBattery: charge target reached, preparing to undock");
+        if (recharge_stop_)
+        {
+          recharge_stop_requested_ = now;
+          next_stop_request_ = now + std::chrono::seconds(1);
+          deadline_ = now + std::chrono::seconds(10);
+          phase_ = Phase::StopRecharge;
+          stop_recharge(true);
+          BTLogger::log("ChargeBattery: charge target reached, waiting for Gazebo to stop recharge");
+        }
+        else
+        {
+          prepare_to_undock();
+        }
         return BT::NodeStatus::RUNNING;
       }
       charge_confirmed_ = charge_confirmed_ ||
@@ -463,6 +473,41 @@ private:
     if (now >= deadline_)
     {
       return hold("battery did not reach the charge target before timeout");
+    }
+    return BT::NodeStatus::RUNNING;
+  }
+
+  void prepare_to_undock()
+  {
+    phase_ = Phase::WaitForUndock;
+    deadline_ = Clock::now() + std::chrono::seconds(20);
+    BTLogger::log("ChargeBattery: preparing to undock");
+  }
+
+  BT::NodeStatus confirm_recharge_stopped()
+  {
+    bool confirmed;
+    {
+      std::lock_guard<std::mutex> lock(battery_mutex_);
+      const auto status = battery_.power_supply_status;
+      confirmed = battery_.present && battery_time_ > recharge_stop_requested_ &&
+        (status == Battery::POWER_SUPPLY_STATUS_DISCHARGING ||
+         status == Battery::POWER_SUPPLY_STATUS_NOT_CHARGING ||
+         status == Battery::POWER_SUPPLY_STATUS_FULL);
+    }
+    if (confirmed)
+    {
+      BTLogger::log("ChargeBattery: Gazebo recharge stopped");
+      prepare_to_undock();
+    }
+    else if (Clock::now() >= deadline_)
+    {
+      return hold("Gazebo did not confirm that recharge stopped");
+    }
+    else if (Clock::now() >= next_stop_request_)
+    {
+      stop_recharge(true);
+      next_stop_request_ = Clock::now() + std::chrono::seconds(1);
     }
     return BT::NodeStatus::RUNNING;
   }
@@ -523,9 +568,9 @@ private:
     }
   }
 
-  void stop_recharge()
+  void stop_recharge(bool resend = false)
   {
-    if (recharge_stop_ && recharge_active_)
+    if (recharge_stop_ && (recharge_active_ || resend))
     {
       std_msgs::msg::Bool command;
       command.data = true;
@@ -542,6 +587,8 @@ private:
   Phase phase_{Phase::Hold};
   Clock::time_point deadline_{};
   Clock::time_point charge_started_{};
+  Clock::time_point recharge_stop_requested_{};
+  Clock::time_point next_stop_request_{};
   bool charge_confirmed_{false};
   bool recharge_active_{false};
   std::mutex battery_mutex_;
