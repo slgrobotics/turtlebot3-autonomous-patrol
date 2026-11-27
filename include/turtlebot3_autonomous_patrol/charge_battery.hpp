@@ -9,9 +9,11 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <behaviortree_cpp/action_node.h>
 #include <nav2_msgs/action/dock_robot.hpp>
+#include <nav2_msgs/action/navigate_to_pose.hpp>
 #include <nav2_msgs/action/undock_robot.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -22,6 +24,7 @@
 class ChargeBattery : public BT::StatefulActionNode
 {
   using Dock = nav2_msgs::action::DockRobot;
+  using Navigate = nav2_msgs::action::NavigateToPose;
   using Undock = nav2_msgs::action::UndockRobot;
   using Battery = sensor_msgs::msg::BatteryState;
   using Clock = std::chrono::steady_clock;
@@ -49,6 +52,22 @@ public:
     BTLogger::init(node);
 
     dock_id_ = parameter(node, "dock_id", std::string{});
+    max_dock_retries_ = parameter(node, "max_dock_retries", std::int64_t{0});
+    retry_pose_ = parameter(node, "dock_retry_pose", std::vector<double>{});
+    if (max_dock_retries_ < 0)
+    {
+      throw std::invalid_argument("max_dock_retries must be nonnegative");
+    }
+    if (!retry_pose_.empty() && (retry_pose_.size() != 3 ||
+        !std::isfinite(retry_pose_[0]) || !std::isfinite(retry_pose_[1]) ||
+        !std::isfinite(retry_pose_[2])))
+    {
+      throw std::invalid_argument("dock_retry_pose must be empty or [x, y, yaw] in the map frame");
+    }
+    if (max_dock_retries_ > 0 && !retry_pose_.empty())
+    {
+      navigate_client_ = rclcpp_action::create_client<Navigate>(node, "/navigate_to_pose");
+    }
     full_threshold_ = static_cast<float>(parameter(node, "full_battery_threshold", 1.0));
     if (!std::isfinite(full_threshold_) || full_threshold_ <= 0 || full_threshold_ > 1)
     {
@@ -81,6 +100,7 @@ public:
     {
       return hold("set the dock_id parameter to enable docking");
     }
+    dock_retries_ = 0;
     phase_ = Phase::WaitForDock;
     deadline_ = Clock::now() + std::chrono::seconds(20);
     BTLogger::log("ChargeBattery: waiting for /dock_robot (" + dock_id_ + ")");
@@ -95,6 +115,8 @@ public:
       {
         case Phase::WaitForDock: return start_docking();
         case Phase::Dock: return check_docking();
+        case Phase::Retry: return start_retry();
+        case Phase::PreStage: return check_pre_staging();
         case Phase::Charge: return check_charge();
         case Phase::WaitForUndock: return start_undocking();
         case Phase::Undock: return check_undocking();
@@ -111,13 +133,14 @@ public:
   void onHalted() override
   {
     cancel(dock_client_, dock_);
+    cancel(navigate_client_, pre_stage_);
     cancel(undock_client_, undock_);
     stop_recharge();
     BTLogger::log("ChargeBattery: halted");
   }
 
 private:
-  enum class Phase { WaitForDock, Dock, Charge, WaitForUndock, Undock, Hold };
+  enum class Phase { WaitForDock, Dock, Retry, PreStage, Charge, WaitForUndock, Undock, Hold };
 
   template<class T>
   static T parameter(const rclcpp::Node::SharedPtr& node, const char* name, const T& fallback)
@@ -227,10 +250,93 @@ private:
   BT::NodeStatus hold(const std::string& reason)
   {
     cancel(dock_client_, dock_);
+    cancel(navigate_client_, pre_stage_);
     cancel(undock_client_, undock_);
     stop_recharge();
     phase_ = Phase::Hold;
     BTLogger::log("ChargeBattery: patrol held — " + reason + ". Check Seggy before restarting patrol.");
+    return BT::NodeStatus::RUNNING;
+  }
+
+  BT::NodeStatus retry_docking(const Request<Dock>::Handle::WrappedResult& result)
+  {
+    const auto reason = "docking failed: " + error_message(result);
+    const auto code = result.result ? result.result->error_code : Dock::Result::UNKNOWN;
+    const bool recoverable = code == Dock::Result::FAILED_TO_STAGE ||
+      code == Dock::Result::FAILED_TO_DETECT_DOCK || code == Dock::Result::FAILED_TO_CONTROL ||
+      code == Dock::Result::FAILED_TO_CHARGE || code == Dock::Result::TIMEOUT;
+    if (result.code != rclcpp_action::ResultCode::ABORTED || !recoverable ||
+        dock_retries_ >= max_dock_retries_)
+    {
+      return hold(reason);
+    }
+
+    dock_.reset();
+    stop_recharge();
+    ++dock_retries_;
+    phase_ = Phase::Retry;
+    deadline_ = Clock::now() + std::chrono::seconds(2);
+    BTLogger::log("ChargeBattery: " + reason + "; scheduling retry " +
+                  std::to_string(dock_retries_) + "/" + std::to_string(max_dock_retries_));
+    return BT::NodeStatus::RUNNING;
+  }
+
+  BT::NodeStatus start_retry()
+  {
+    if (Clock::now() < deadline_)
+    {
+      return BT::NodeStatus::RUNNING;
+    }
+    if (!navigate_client_)
+    {
+      phase_ = Phase::WaitForDock;
+      deadline_ = Clock::now() + std::chrono::seconds(20);
+      return BT::NodeStatus::RUNNING;
+    }
+    if (!navigate_client_->action_server_is_ready())
+    {
+      return hold("/navigate_to_pose unavailable for docking pre-staging");
+    }
+
+    Navigate::Goal goal;
+    goal.pose.header.frame_id = "map";
+    goal.pose.pose.position.x = retry_pose_[0];
+    goal.pose.pose.position.y = retry_pose_[1];
+    goal.pose.pose.orientation.z = std::sin(retry_pose_[2] / 2);
+    goal.pose.pose.orientation.w = std::cos(retry_pose_[2] / 2);
+    send(navigate_client_, goal, pre_stage_);
+    phase_ = Phase::PreStage;
+    deadline_ = Clock::now() + std::chrono::minutes(5);
+    BTLogger::log("ChargeBattery: navigating to pre-staging for docking retry");
+    return BT::NodeStatus::RUNNING;
+  }
+
+  BT::NodeStatus check_pre_staging()
+  {
+    Request<Navigate>::Handle::WrappedResult result{};
+    bool rejected;
+    bool finished;
+    {
+      std::lock_guard<std::mutex> lock(pre_stage_->mutex);
+      result = pre_stage_->result;
+      rejected = pre_stage_->rejected;
+      finished = pre_stage_->finished;
+    }
+    if (rejected || (finished && result.code != rclcpp_action::ResultCode::SUCCEEDED))
+    {
+      return hold(rejected ? "pre-staging goal rejected" : "pre-staging failed: " + error_message(result));
+    }
+    if (finished)
+    {
+      pre_stage_.reset();
+      phase_ = Phase::WaitForDock;
+      deadline_ = Clock::now() + std::chrono::seconds(20);
+      BTLogger::log("ChargeBattery: reached pre-staging");
+    }
+    else if (Clock::now() >= deadline_)
+    {
+      return hold("pre-staging timed out");
+    }
     return BT::NodeStatus::RUNNING;
   }
 
@@ -290,9 +396,13 @@ private:
       stage = dock_->feedback;
       retries = dock_->retries;
     }
-    if (rejected || (finished && !succeeded(result)))
+    if (rejected)
     {
-      return hold(rejected ? "docking goal rejected" : "docking failed: " + error_message(result));
+      return hold("docking goal rejected");
+    }
+    if (finished && !succeeded(result))
+    {
+      return retry_docking(result);
     }
     if (finished)
     {
@@ -425,6 +535,9 @@ private:
   }
 
   std::string dock_id_;
+  std::int64_t max_dock_retries_{0};
+  std::int64_t dock_retries_{0};
+  std::vector<double> retry_pose_;
   float full_threshold_;
   Phase phase_{Phase::Hold};
   Clock::time_point deadline_{};
@@ -436,8 +549,10 @@ private:
   Clock::time_point battery_time_{};
 
   std::shared_ptr<Request<Dock>> dock_;
+  std::shared_ptr<Request<Navigate>> pre_stage_;
   std::shared_ptr<Request<Undock>> undock_;
   rclcpp_action::Client<Dock>::SharedPtr dock_client_;
+  rclcpp_action::Client<Navigate>::SharedPtr navigate_client_;
   rclcpp_action::Client<Undock>::SharedPtr undock_client_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr recharge_start_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr recharge_stop_;

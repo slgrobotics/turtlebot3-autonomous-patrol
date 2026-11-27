@@ -68,6 +68,7 @@ int main(int argc, char** argv)
 
   auto tree = factory.createTreeFromFile(xml_path, blackboard);
   RCLCPP_INFO(node->get_logger(), "Patrol tree loaded from %s", xml_path.c_str());
+  BTLogger::log("======== Started Patrol Commander. Patrol tree loaded from " + xml_path);
 
   // tick the tree at 10 Hz — patrol starts immediately
   // try/catch prevents one bad node from crashing the whole commander
