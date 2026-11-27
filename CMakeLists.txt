@@ -9,6 +9,8 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
 
 # --- Library ---
 add_library(patrol_bt_nodes SHARED
@@ -22,6 +24,8 @@ target_link_libraries(patrol_bt_nodes PRIVATE
   sensor_msgs::sensor_msgs__rosidl_typesupport_cpp
   nav2_msgs::nav2_msgs__rosidl_typesupport_cpp
   geometry_msgs::geometry_msgs__rosidl_typesupport_cpp
+  tf2::tf2
+  tf2_ros::tf2_ros
 )
 target_include_directories(patrol_bt_nodes PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -38,6 +42,8 @@ target_link_libraries(patrol_commander PRIVATE
   sensor_msgs::sensor_msgs__rosidl_typesupport_cpp
   nav2_msgs::nav2_msgs__rosidl_typesupport_cpp
   geometry_msgs::geometry_msgs__rosidl_typesupport_cpp
+  tf2::tf2
+  tf2_ros::tf2_ros
 )
 target_include_directories(patrol_commander PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
