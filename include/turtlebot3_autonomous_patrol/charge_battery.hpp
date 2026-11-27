@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -101,6 +103,7 @@ public:
       return hold("set the dock_id parameter to enable docking");
     }
     dock_retries_ = 0;
+    rejection_delay_ = std::chrono::seconds(2);
     phase_ = Phase::WaitForDock;
     deadline_ = Clock::now() + std::chrono::seconds(20);
     BTLogger::log("ChargeBattery: waiting for /dock_robot (" + dock_id_ + ")");
@@ -115,6 +118,13 @@ public:
       {
         case Phase::WaitForDock: return start_docking();
         case Phase::Dock: return check_docking();
+        case Phase::RetryRejected:
+          if (Clock::now() >= deadline_)
+          {
+            phase_ = Phase::WaitForDock;
+            deadline_ = Clock::now() + std::chrono::seconds(20);
+          }
+          return BT::NodeStatus::RUNNING;
         case Phase::Retry: return start_retry();
         case Phase::PreStage: return check_pre_staging();
         case Phase::Charge: return check_charge();
@@ -141,7 +151,9 @@ public:
   }
 
 private:
-  enum class Phase { WaitForDock, Dock, Retry, PreStage, Charge, StopRecharge, WaitForUndock, Undock, Hold };
+  enum class Phase {
+    WaitForDock, Dock, RetryRejected, Retry, PreStage, Charge, StopRecharge, WaitForUndock, Undock, Hold
+  };
 
   template<class T>
   static T parameter(const rclcpp::Node::SharedPtr& node, const char* name, const T& fallback)
@@ -360,11 +372,10 @@ private:
     }
     else if (Clock::now() >= deadline_)
     {
-      if (!dock_ready)
-      {
-        return hold("/dock_robot unavailable");
-      }
-      return hold(undock_ready ? "Gazebo recharge bridge unavailable" : "/undock_robot unavailable");
+      const char* unavailable = !dock_ready ? "/dock_robot" :
+        !undock_ready ? "/undock_robot" : "Gazebo recharge bridge";
+      BTLogger::log(std::string("ChargeBattery: waiting for ") + unavailable + " to become available");
+      deadline_ = Clock::now() + std::chrono::seconds(30);
     }
     return BT::NodeStatus::RUNNING;
   }
@@ -399,7 +410,17 @@ private:
     }
     if (rejected)
     {
-      return hold("docking goal rejected");
+      dock_.reset();
+      phase_ = Phase::RetryRejected;
+      deadline_ = Clock::now() + rejection_delay_;
+      BTLogger::log("ChargeBattery: docking goal rejected, retrying in " +
+                    std::to_string(rejection_delay_.count()) + " s");
+      rejection_delay_ = std::min(rejection_delay_ * 2, std::chrono::seconds(30));
+      return BT::NodeStatus::RUNNING;
+    }
+    if (finished)
+    {
+      rejection_delay_ = std::chrono::seconds(2);
     }
     if (finished && !succeeded(result))
     {
@@ -582,6 +603,7 @@ private:
   std::string dock_id_;
   std::int64_t max_dock_retries_{0};
   std::int64_t dock_retries_{0};
+  std::chrono::seconds rejection_delay_{2};
   std::vector<double> retry_pose_;
   float full_threshold_;
   Phase phase_{Phase::Hold};
