@@ -125,7 +125,7 @@ would only notice objects between goals.
 **Recovery.** If `NavigateToRoom` fails — blocked path, or the robot has lost track of where
 it is — `RecoveryRotate` spins a full circle so the lidar sees the room from all angles and
 localization can re-lock. `WaitAndRetry` then waits 2 seconds and returns FAILURE, which
-sends the parent `Fallback` back around to try navigation again.
+lets `RetryUntilSuccessful` retry the same stop once. After two failed attempts the route continues at the next stop. Only the battery gate can start docking.
 
 ## The custom nodes
 

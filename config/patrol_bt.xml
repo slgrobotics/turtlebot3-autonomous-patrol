@@ -12,82 +12,97 @@
         ├── RecoveryRotate           360 spin to re-localize
         └── WaitAndRetry             2s wait, returns FAILURE to trigger retry
 
-  Top-level: CheckBattery gates the patrol loop.
-  A low battery starts docking, charging, and undocking.
+  The battery gate alone starts docking, charging, and undocking.
+  Its Fallback keeps the charge cycle active through undocking.
 -->
 
 <root BTCPP_format="4">
   <BehaviorTree ID="PatrolTree">
-    <Fallback>
-      <ReactiveSequence>
+    <ReactiveSequence>
+      <Fallback name="BatteryGate">
         <CheckBattery/>
-        <Sequence name="Patrol">
+        <ChargeBattery/>
+      </Fallback>
+      <Sequence name="Patrol">
 
-          <!-- Room 1 (top-left): map frame (1.0, 0.5) -->
-          <Fallback>
-            <ReactiveSequence>
-              <Inverter>
-                <DetectObject target="box" object_pose="{object_pose}"/>
-              </Inverter>
-              <NavigateToRoom x="1.0" y="0.5"/>
-            </ReactiveSequence>
-            <ApproachObject target_pose="{object_pose}"/>
-            <Sequence>
-              <RecoveryRotate/>
-              <WaitAndRetry/>
-            </Sequence>
-          </Fallback>
+        <!-- Room 1 (top-left): map frame (1.0, 0.5) -->
+        <ForceSuccess>
+          <RetryUntilSuccessful num_attempts="2">
+            <Fallback>
+              <ReactiveSequence>
+                <Inverter>
+                  <DetectObject target="box" object_pose="{object_pose}"/>
+                </Inverter>
+                <NavigateToRoom x="1.0" y="0.5"/>
+              </ReactiveSequence>
+              <ApproachObject target_pose="{object_pose}"/>
+              <Sequence>
+                <RecoveryRotate/>
+                <WaitAndRetry/>
+              </Sequence>
+            </Fallback>
+          </RetryUntilSuccessful>
+        </ForceSuccess>
 
-          <!-- Room 2 (top-right): map frame (5.0, 0.5) -->
-          <Fallback>
-            <ReactiveSequence>
-              <Inverter>
-                <DetectObject target="box" object_pose="{object_pose}"/>
-              </Inverter>
-              <NavigateToRoom x="5.0" y="0.5"/>
-            </ReactiveSequence>
-            <ApproachObject target_pose="{object_pose}"/>
-            <Sequence>
-              <RecoveryRotate/>
-              <WaitAndRetry/>
-            </Sequence>
-          </Fallback>
+        <!-- Room 2 (top-right): map frame (5.0, 0.5) -->
+        <ForceSuccess>
+          <RetryUntilSuccessful num_attempts="2">
+            <Fallback>
+              <ReactiveSequence>
+                <Inverter>
+                  <DetectObject target="box" object_pose="{object_pose}"/>
+                </Inverter>
+                <NavigateToRoom x="5.0" y="0.5"/>
+              </ReactiveSequence>
+              <ApproachObject target_pose="{object_pose}"/>
+              <Sequence>
+                <RecoveryRotate/>
+                <WaitAndRetry/>
+              </Sequence>
+            </Fallback>
+          </RetryUntilSuccessful>
+        </ForceSuccess>
 
-          <!-- Room 3 (bottom-right): map frame (5.0, -3.5) -->
-          <Fallback>
-            <ReactiveSequence>
-              <Inverter>
-                <DetectObject target="box" object_pose="{object_pose}"/>
-              </Inverter>
-              <NavigateToRoom x="5.0" y="-3.5"/>
-            </ReactiveSequence>
-            <ApproachObject target_pose="{object_pose}"/>
-            <Sequence>
-              <RecoveryRotate/>
-              <WaitAndRetry/>
-            </Sequence>
-          </Fallback>
+        <!-- Room 3 (bottom-right): map frame (5.0, -3.5) -->
+        <ForceSuccess>
+          <RetryUntilSuccessful num_attempts="2">
+            <Fallback>
+              <ReactiveSequence>
+                <Inverter>
+                  <DetectObject target="box" object_pose="{object_pose}"/>
+                </Inverter>
+                <NavigateToRoom x="5.0" y="-3.5"/>
+              </ReactiveSequence>
+              <ApproachObject target_pose="{object_pose}"/>
+              <Sequence>
+                <RecoveryRotate/>
+                <WaitAndRetry/>
+              </Sequence>
+            </Fallback>
+          </RetryUntilSuccessful>
+        </ForceSuccess>
 
-          <!-- Room 4 (bottom-left): map frame (1.0, -3.5) -->
-          <Fallback>
-            <ReactiveSequence>
-              <Inverter>
-                <DetectObject target="box" object_pose="{object_pose}"/>
-              </Inverter>
-              <NavigateToRoom x="1.0" y="-3.5"/>
-            </ReactiveSequence>
-            <ApproachObject target_pose="{object_pose}"/>
-            <Sequence>
-              <RecoveryRotate/>
-              <WaitAndRetry/>
-            </Sequence>
-          </Fallback>
+        <!-- Room 4 (bottom-left): map frame (1.0, -3.5) -->
+        <ForceSuccess>
+          <RetryUntilSuccessful num_attempts="2">
+            <Fallback>
+              <ReactiveSequence>
+                <Inverter>
+                  <DetectObject target="box" object_pose="{object_pose}"/>
+                </Inverter>
+                <NavigateToRoom x="1.0" y="-3.5"/>
+              </ReactiveSequence>
+              <ApproachObject target_pose="{object_pose}"/>
+              <Sequence>
+                <RecoveryRotate/>
+                <WaitAndRetry/>
+              </Sequence>
+            </Fallback>
+          </RetryUntilSuccessful>
+        </ForceSuccess>
 
-        </Sequence>
-      </ReactiveSequence>
-      <!-- Hold patrol until docking, charging, and undocking complete -->
-      <ChargeBattery/>
-    </Fallback>
+      </Sequence>
+    </ReactiveSequence>
   </BehaviorTree>
 
   <TreeNodesModel>
