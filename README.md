@@ -16,6 +16,7 @@ Back to [Main Project Home](https://github.com/slgrobotics/articubot_one/wiki)
 - [How it's put together](#how-its-put-together)
 - [The behavior tree](#the-behavior-tree)
 - [The custom nodes](#the-custom-nodes)
+- [Run custom scripts at patrol stops](#run-custom-scripts-at-patrol-stops)
 - [Three patterns worth stealing](#three-patterns-worth-stealing)
 - [Quickstart](#quickstart)
 - [Coordinates](#coordinates)
@@ -73,7 +74,8 @@ patrol_commander (mission layer)
           ├── ApproachObject  → action client → /navigate_to_pose (0.5m offset)
           ├── RecoveryRotate  → publishes /cmd_vel directly
           ├── WaitAndRetry    → 2s pause, returns FAILURE to trigger a retry
-          └── ChargeBattery   → docks, waits for full charge, then undocks
+          ├── ChargeBattery   → docks, waits for full charge, then undocks
+          └── RunPatrolTask   → runs a configured script after arrival
 
 bt_navigator (navigation layer)
     └── Nav2's built-in point-to-point tree
@@ -138,9 +140,46 @@ lets `RetryUntilSuccessful` retry the same stop once. After two failed attempts 
 | `RecoveryRotate` | StatefulActionNode | Publishes `cmd_vel` for 6.28 s (a full turn at 1 rad/s) |
 | `WaitAndRetry` | StatefulActionNode | Waits 2 s, returns FAILURE to trigger the retry |
 | `ChargeBattery` | StatefulActionNode | Calls `/dock_robot` with `dock_id`, waits for full charge, then calls `/undock_robot`. |
+| `RunPatrolTask` | StatefulActionNode | Runs a stop's configured executable, forwards its JSON logs, and monitors its exit status. |
 
 All of them publish to `/bt_log`, so you can watch the tree think in real time. Useful for
 demos, and it's also how I caught the bug described below.
+
+## Run custom scripts at patrol stops
+
+Use [`RunPatrolTask`](include/turtlebot3_autonomous_patrol/run_patrol_task.hpp) after a successful navigation action to run a stop-specific task. Each task is an independent executable and reads its own parameters. A stop without a task entry continues immediately.
+
+```xml
+<Sequence>
+  <NavigateToRoom x="2.814" y="-4.647" label="South yard"/>
+  <ForceSuccess>
+    <RunPatrolTask stop="south_yard"/>
+  </ForceSuccess>
+</Sequence>
+```
+
+Set the commander's `patrol_tasks_file` ROS parameter to the task catalogue path. The following entry uses the rotation executable installed by Articubot One.
+
+```yaml
+stops:
+  south_yard:
+    name: "Rotate once left"
+    executable: "articubot_one patrol_rotate_at_stop.py"
+    angle_deg: 360.0
+    angular_speed_rad_s: 0.30
+    timeout_s: 90.0
+    use_sim_time: true
+```
+
+The commander resolves `executable` as `package executable` in the sourced ROS workspace. It passes the absolute catalogue path and the stop key as two positional arguments. The example's rotation fields belong to the script. The commander only uses the stop key, `name`, and `executable`.
+
+For progress reporting, print one JSON object per stdout line. The commander accepts version 1 of `patrol_task_start`, `patrol_task_progress`, and `patrol_task_finish` for the active stop. It forwards the decoded `log` text to `/bt_log` with a `RunPatrolTask:` prefix.
+
+```json
+{"event":"patrol_task_progress","version":1,"stop":"south_yard","name":"Rotate once left","elapsed_s":20.0,"eta_s":2,"percent_complete":93.2,"log":"Rotated 335.5° of 360°"}
+```
+
+The process exit status determines success. Exit code `0` means success, and the XML example advances after an ordinary task failure. On interruption or after a five-minute timeout, the commander sends `SIGTERM` and waits for the task to exit. Motion tasks should stop and confirm that motion has ceased before exiting, use `130` for a clean cancellation, and use `3` if they cannot confirm a stop. Patrol holds for inspection if the task cannot stop cleanly.
 
 ## Three patterns worth stealing
 

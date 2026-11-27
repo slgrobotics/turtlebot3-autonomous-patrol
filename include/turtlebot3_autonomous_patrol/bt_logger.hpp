@@ -28,7 +28,7 @@ public:
 
   static void log(const std::string& msg, bool suppress_duplicates = true)
   {
-    if (!publisher_) return;
+    if (!publisher_ || !rclcpp::ok()) return;
 
     auto key = msg.substr(0, msg.find(':'));
 

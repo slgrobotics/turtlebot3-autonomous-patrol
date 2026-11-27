@@ -10,6 +10,7 @@
 #include "turtlebot3_autonomous_patrol/recovery_rotate.hpp"
 #include "turtlebot3_autonomous_patrol/wait_and_retry.hpp"
 #include "turtlebot3_autonomous_patrol/charge_battery.hpp"
+#include "turtlebot3_autonomous_patrol/run_patrol_task.hpp"
 #include <behaviortree_cpp/bt_factory.h>
 
 // the string passed here (e.g. "CheckBattery") must match the XML tag exactly
@@ -22,4 +23,5 @@ BT_REGISTER_NODES(factory)
   factory.registerNodeType<RecoveryRotate>("RecoveryRotate");
   factory.registerNodeType<WaitAndRetry>("WaitAndRetry");
   factory.registerNodeType<ChargeBattery>("ChargeBattery");
+  factory.registerNodeType<RunPatrolTask>("RunPatrolTask");
 }

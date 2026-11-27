@@ -29,6 +29,7 @@
 #include "turtlebot3_autonomous_patrol/recovery_rotate.hpp"
 #include "turtlebot3_autonomous_patrol/wait_and_retry.hpp"
 #include "turtlebot3_autonomous_patrol/charge_battery.hpp"
+#include "turtlebot3_autonomous_patrol/run_patrol_task.hpp"
 
 int main(int argc, char** argv)
 {
@@ -40,7 +41,6 @@ int main(int argc, char** argv)
   // can process messages while the tree ticks on the main thread
   rclcpp::executors::MultiThreadedExecutor executor;
   executor.add_node(node);
-  std::thread spin_thread([&executor]() { executor.spin(); });
 
   // register all custom BT nodes with the factory
   BT::BehaviorTreeFactory factory;
@@ -51,6 +51,7 @@ int main(int argc, char** argv)
   factory.registerNodeType<RecoveryRotate>("RecoveryRotate");
   factory.registerNodeType<WaitAndRetry>("WaitAndRetry");
   factory.registerNodeType<ChargeBattery>("ChargeBattery");
+  factory.registerNodeType<RunPatrolTask>("RunPatrolTask");
 
   // put the ROS2 node on the blackboard — every BT node reads it with:
   // config.blackboard->get<rclcpp::Node::SharedPtr>("node")
@@ -66,7 +67,17 @@ int main(int argc, char** argv)
     return 1;
   }
 
-  auto tree = factory.createTreeFromFile(xml_path, blackboard);
+  BT::Tree tree;
+  try
+  {
+    tree = factory.createTreeFromFile(xml_path, blackboard);
+  }
+  catch (const std::exception& error)
+  {
+    RCLCPP_FATAL(node->get_logger(), "Could not load patrol tree: %s", error.what());
+    return 1;
+  }
+  std::thread spin_thread([&executor]() { executor.spin(); });
   RCLCPP_INFO(node->get_logger(), "Patrol tree loaded from %s", xml_path.c_str());
   BTLogger::log("======== Started Patrol Commander. Patrol tree loaded from " + xml_path);
 
@@ -77,7 +88,11 @@ int main(int argc, char** argv)
   {
     try
     {
-      tree.tickOnce();
+      bool stop_unconfirmed = false;
+      if (!blackboard->get("patrol_task_stop_unconfirmed", stop_unconfirmed) || !stop_unconfirmed)
+      {
+        tree.tickOnce();
+      }
     }
     catch (const BT::BehaviorTreeException& e)
     {
@@ -86,6 +101,7 @@ int main(int argc, char** argv)
     rate.sleep();
   }
 
+  tree.haltTree();
   executor.cancel();
   spin_thread.join();
   rclcpp::shutdown();

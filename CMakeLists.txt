@@ -11,6 +11,10 @@ find_package(nav2_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(ament_index_cpp REQUIRED)
+find_package(nlohmann_json REQUIRED)
+find_package(yaml_cpp_vendor REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 # --- Library ---
 add_library(patrol_bt_nodes SHARED
@@ -26,6 +30,9 @@ target_link_libraries(patrol_bt_nodes PRIVATE
   geometry_msgs::geometry_msgs__rosidl_typesupport_cpp
   tf2::tf2
   tf2_ros::tf2_ros
+  ament_index_cpp::ament_index_cpp
+  nlohmann_json::nlohmann_json
+  yaml-cpp::yaml-cpp
 )
 target_include_directories(patrol_bt_nodes PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -44,6 +51,9 @@ target_link_libraries(patrol_commander PRIVATE
   geometry_msgs::geometry_msgs__rosidl_typesupport_cpp
   tf2::tf2
   tf2_ros::tf2_ros
+  ament_index_cpp::ament_index_cpp
+  nlohmann_json::nlohmann_json
+  yaml-cpp::yaml-cpp
 )
 target_include_directories(patrol_commander PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
