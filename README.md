@@ -171,6 +171,8 @@ stops:
     use_sim_time: true
 ```
 
+**Tip:** see custom rotation script - [patrol_rotate_at_stop.py](https://github.com/slgrobotics/articubot_one/blob/lyrical/scripts/patrol_rotate_at_stop.py)
+
 The commander resolves `executable` as `package executable` in the sourced ROS workspace. It passes the absolute catalogue path and the stop key as two positional arguments. The example's rotation fields belong to the script. The commander only uses the stop key, `name`, and `executable`.
 
 For progress reporting, print one JSON object per stdout line. The commander accepts version 1 of `patrol_task_start`, `patrol_task_progress`, and `patrol_task_finish` for the active stop. It forwards the decoded `log` text to `/bt_log` with a `RunPatrolTask:` prefix.
